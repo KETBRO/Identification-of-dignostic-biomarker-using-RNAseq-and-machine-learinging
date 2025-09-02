@@ -1,3 +1,9 @@
+# To ensure robustness and to avoid information leakage, feature selection was performed only on the training set. 
+# Several feature selection strategies were employed independently, including Support Vector Machine Recursive Feature Elimination (SVM-RFE), 
+# Least Absolute Shrinkage and Selection Operator (LASSO), Mann–Whitney U test, Boruta algorithm, distance correlation (DCor), random forest 
+# feature importance, and Elastic Net regularization. For each method, the number of top-ranked features was progressively reduced from ten to five, 
+# in steps of one, and classifiers were retrained at each step to evaluate performance. Among all methods, the Elastic Net–based approach identified 
+# a seven-gene panel that yielded the best diagnostic accuracy.
 A=2
 import pandas as pd
 import numpy as np
@@ -48,32 +54,8 @@ y = metadata['description'].apply(lambda x: 1 if x == 'DR' else 0).values
 
 
 
-# Calculate the correlation matrix
-correlation_matrix = X.corr().abs()
-
-# Set a threshold for low correlatin(Best=0.8)
-threshold = 1
-
-# Filter out features that have a high correlation with any other feature
-# We'll create a mask to identify rows & cols that should be dropped
-to_drop = [column for column in correlation_matrix.columns if any((correlation_matrix[column] > threshold) & (correlation_matrix.index != column))]
-# Create a new DataFrame with the low-correlation features
-low_corr_data = X.drop(columns=to_drop)
-# gene_names = low_corr_data.columns
-# gene_names_df = pd.DataFrame(gene_names, columns=['Gene Names'])
-# gene_names_df.to_csv('low_correlation_genes.csv', index=False)
-
-
-# Visualize the new correlation matrix
-# plt.figure(figsize=(12, 10))
-# sns.heatmap(low_corr_data.corr().abs(), annot=True, cmap='coolwarm', fmt=".2f")
-# plt.title('Correlation Matrix of Low Correlation DEGs')
-# plt.show()
-
-# print(f"Selected {low_corr_data.shape[1]} features with correlations under {threshold}.")
-
 # Split data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(low_corr_data, y, test_size=0.2, random_state=42, stratify=y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
 # Scale the data
 scaler = StandardScaler()
@@ -162,7 +144,7 @@ kf = KFold(n_splits=5, shuffle=True, random_state=42)
 # sorted_features = np.argsort(p_values)
 
 # # Select the top N features
-# N = 15  # Number of top features to select
+# N = 10  # Number of top features to select
 # top_features = sorted_features[:N]
 
 # # Transform data to include only the top N features
@@ -261,11 +243,16 @@ sorted_features = np.argsort(elastic_net_coef)[::-1]
 N = 7  # Number of top features to select
 top_features = sorted_features[:N]
 
-# Save the selected features to a CSV file
-selected_feature_names = low_corr_data.columns[top_features]
+# Get feature names from original DataFrame
+feature_names = X_train.columns
+selected_feature_names = feature_names[top_features]
+
+# Save selected features
 selected_features_df = pd.DataFrame({
     'Feature': selected_feature_names,
-    'Coefficient': elastic_net_coef[top_features]})
+    'Coefficient': elastic_net_coef[top_features]
+})
+
 
 #selected_features_df.to_csv('selected_features_elastic_net_6.csv', index=False)
 
@@ -285,7 +272,7 @@ models = {
 
 # Evaluate each model using cross-validation
 for name, model in models.items():
-    scores = cross_val_score(model, X_train_scaled_enet_selected, y_train, cv=5, scoring='accuracy')
+    scores = cross_val_score(model, X_train_scaled_enet_selected, y_train, cv=kf, scoring='accuracy')
     print(f"{name} CV_Accuracy: {np.mean(scores):.4f} ± {np.std(scores):.4f}")
     
    # Calculate AUC for each fold
@@ -294,31 +281,31 @@ for name, model in models.items():
     for train_idx, test_idx in kf.split(X_train_scaled_enet_selected):
         fold_auc = roc_auc_score(y_train[test_idx], y_proba[test_idx, 1])
         auc_scores.append(fold_auc)
-#        print(f"{name} Fold AUC: {fold_auc:.4f}")
+        print(f"{name} Fold AUC: {fold_auc:.4f}")
     
     mean_auc = np.mean(auc_scores)
     print(f"{name} Mean AUC: {mean_auc:.4f}")    
 #-----------------------------------------------------------------------------------    
-    # Train and evaluate models on the test set
-    results = {}
-    for name, model in models.items():
-        # Fit model
-        model.fit(X_train_scaled_enet_selected, y_train)
+#     # Train and evaluate models on the test set
+#     results = {}
+#     for name, model in models.items():
+#         # Fit model
+#         model.fit(X_train_scaled_enet_selected, y_train)
         
-        # Predict and evaluate
-        y_pred = model.predict(X_test_scaled_enet_selected)
-        y_proba_ev = model.predict_proba(X_test_scaled_enet_selected)[:, 1]
+#         # Predict and evaluate
+#         y_pred = model.predict(X_test_scaled_enet_selected)
+#         y_proba_ev = model.predict_proba(X_test_scaled_enet_selected)[:, 1]
         
-        accuracy = accuracy_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_proba_ev)
-        results[name] = (accuracy, auc)
+#         accuracy = accuracy_score(y_test, y_pred)
+#         auc = roc_auc_score(y_test, y_proba_ev)
+#         results[name] = (accuracy, auc)
 
-    # Print results
-    for name, (acc, auc) in results.items():
-        print(f"{name} - Accuracy: {acc:.2f}, AUC: {auc:.2f}")
+#     # Print results
+#     for name, (acc, auc) in results.items():
+#         print(f"{name} - Accuracy: {acc:.2f}, AUC: {auc:.2f}")
         
     
-#-----------------------------------------------------------------------------
+# #-----------------------------------------------------------------------------
 
 # Train and evaluate models on the test set
 results = {}
@@ -363,33 +350,10 @@ for name, metrics in results.items():
 
 
 #-----------------------------------------------------------------------------
-from sklearn.model_selection import KFold, cross_val_score, cross_val_predict
-from sklearn.metrics import roc_auc_score
-import numpy as np
 
-# Select SVM model
-svm_model = models['SVM']
+# Select SVM model 
+svm_model = models['SVM'] #(Chnage the model seprate figure)
 
-# Evaluate SVM model using cross-validation
-kf = KFold(n_splits=5)
-scores = cross_val_score(svm_model, X_train_scaled_enet_selected, y_train, cv=kf, scoring='accuracy')
-print(f"SVM CV_Accuracy: {np.mean(scores):.4f} ± {np.std(scores):.4f}")
-
-# Calculate AUC for each fold
-y_proba = cross_val_predict(svm_model, X_train_scaled_enet_selected, y_train, cv=kf, method='predict_proba')
-auc_scores = []
-
-for train_idx, test_idx in kf.split(X_train_scaled_enet_selected):
-    fold_auc = roc_auc_score(y_train[test_idx], y_proba[test_idx, 1])
-    auc_scores.append(fold_auc)
-    print(f"SVM Fold AUC: {fold_auc:.4f}")
-
-mean_auc = np.mean(auc_scores)
-print(f"SVM Mean AUC: {mean_auc:.4f}")
-
-
-
-#------------------------------------------------------------------------------
 # Calculate AUC for each fold and store FPR and TPR for each fold
 fprs = []
 tprs = []
@@ -437,7 +401,7 @@ plt.show()
 
 
 
-svm_model.fit(X_train_scaled_enet_selected, y_train)
+svm_model.fit(X_train_scaled_enet_selected, y_train) #(Chnage the model seprate figure)
     
     # Predict and evaluate
 y_pred = svm_model.predict(X_test_scaled_enet_selected)
@@ -446,7 +410,7 @@ y_proba_ev = svm_model.predict_proba(X_test_scaled_enet_selected)[:, 1]
 accuracy = accuracy_score(y_test, y_pred)
 auc = roc_auc_score(y_test, y_proba_ev)
 results[name] = (accuracy, auc)
-print(f"{name} - Accuracy: {acc:.2f}, AUC: {auc:.2f}")
+#print(f"{name} - Accuracy: {acc:.2f}, AUC: {auc:.2f}")
 
 fpr, tpr, _ = roc_curve(y_test, y_proba_ev)
 plt.figure()
@@ -480,70 +444,124 @@ joblib.dump(scaler, 'scaler.pkl')
 
 
 #------------------------------------------------------------------------------
-# # Define models
-# models = {
-#     'Logistic Regression': LogisticRegression(),
-#     'Random Forest': RandomForestClassifier(n_estimators=100),
-#     'SVM': SVC(probability=True),
-#     'Gradient Boosting': GradientBoostingClassifier(n_estimators=100)
-# }
+#------------------------------------------------------------------------------
 
-# # Train and evaluate models
-# results = {}
-# for name, model in models.items():
-#     # Fit model
-#     if 'SVM' in name or 'Logistic' in name:  # Models that benefit from scaled data
-#         model.fit(X_train_scaled_selected_svm_rfe, y_train)
-#     else:
-#         model.fit(X_train_scaled_selected_svm_rfe, y_train)
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import (
+    accuracy_score, mean_squared_error, f1_score, precision_score,
+    recall_score, confusion_matrix, matthews_corrcoef, roc_auc_score, roc_curve
+)
+
+# ---- Bootstrap CI function ----
+def bootstrap_ci(y_true, y_pred, y_proba, n_bootstrap=1000, alpha=0.95):
+    metrics = {
+        "Accuracy": lambda yt, yp, yp_prob: accuracy_score(yt, yp),
+        "AUC": lambda yt, yp, yp_prob: roc_auc_score(yt, yp_prob),
+        "F1": lambda yt, yp, yp_prob: f1_score(yt, yp),
+        "Precision": lambda yt, yp, yp_prob: precision_score(yt, yp),
+        "Recall": lambda yt, yp, yp_prob: recall_score(yt, yp),
+        "MCC": lambda yt, yp, yp_prob: matthews_corrcoef(yt, yp),
+    }
     
-#     # Predict and evaluate
-#     if 'SVM' in name or 'Logistic' in name:
-#         y_pred = model.predict(X_test_scaled_selected_svm_rfe)
-#         y_proba = model.predict_proba(X_test_scaled_selected_svm_rfe)[:, 1]
-#     else:
-#         y_pred = model.predict(X_test_scaled_selected_svm_rfe)
-#         y_proba = model.predict_proba(X_test_scaled_selected_svm_rfe)[:, 1]
-    
-#     accuracy = accuracy_score(y_test, y_pred)
-#     auc = roc_auc_score(y_test, y_proba)
-#     results[name] = (accuracy, auc)
+    ci = {}
+    n = len(y_true)
+    for name, func in metrics.items():
+        bootstrapped_scores = []
+        for _ in range(n_bootstrap):
+            indices = np.random.choice(range(n), n, replace=True)
+            score = func(y_true[indices], y_pred[indices], y_proba[indices])
+            bootstrapped_scores.append(score)
+        lower = np.percentile(bootstrapped_scores, (1-alpha)/2 * 100)
+        upper = np.percentile(bootstrapped_scores, (1 + alpha)/2 * 100)
+        ci[name] = (lower, upper)
+    return ci
 
-# # Print results
-# for name, (acc, auc) in results.items():
-#     print(f"{name} - Accuracy: {acc:.2f}, AUC: {auc:.2f}")
+# ---- Train & evaluate models ----
+results = {}
+for name, model in models.items():
+    model.fit(X_train_scaled_enet_selected, y_train)
 
+    # Predictions
+    y_pred = model.predict(X_test_scaled_enet_selected)
+    y_proba = model.predict_proba(X_test_scaled_enet_selected)[:, 1]
 
+    # Metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
+    tn, fp, fn, tp = cm.ravel()
+    sensitivity = recall
+    specificity = tn / (tn + fp)
+    mcc = matthews_corrcoef(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_proba)
 
-# kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    # Bootstrap CI
+    ci_dict = bootstrap_ci(np.array(y_test), np.array(y_pred), np.array(y_proba), n_bootstrap=1000, alpha=0.95)
 
-# # Function to evaluate models
-# def evaluate_model(model, X, y, kf):
-#     with parallel_backend('threading', n_jobs=-1):
-#         scores = cross_val_score(model, X, y, cv=kf, n_jobs=-1)
-#     return scores.mean()
-# C_values = np.logspace(-10, 1, 10)
-# logistic = LogisticRegressionCV(Cs=C_values, penalty='l1', solver='saga', cv=5, random_state=42, max_iter=10000)
-# logistic.fit(X_train_scaled, y_train)
-# logistic_score = evaluate_model(logistic, X_train_scaled, y_train, kf)
-# print(logistic_score)
+    results[name] = {
+        "Accuracy": f"{accuracy:.3f} [{ci_dict['Accuracy'][0]:.3f}-{ci_dict['Accuracy'][1]:.3f}]",
+        "AUC": f"{auc:.3f} [{ci_dict['AUC'][0]:.3f}-{ci_dict['AUC'][1]:.3f}]",
+        "F1 Score": f"{f1:.3f} [{ci_dict['F1'][0]:.3f}-{ci_dict['F1'][1]:.3f}]",
+        "Precision": f"{precision:.3f} [{ci_dict['Precision'][0]:.3f}-{ci_dict['Precision'][1]:.3f}]",
+        "Recall": f"{recall:.3f} [{ci_dict['Recall'][0]:.3f}-{ci_dict['Recall'][1]:.3f}]",
+        "Sensitivity": sensitivity,
+        "Specificity": specificity,
+        "MCC": f"{mcc:.3f} [{ci_dict['MCC'][0]:.3f}-{ci_dict['MCC'][1]:.3f}]",
+        "MSE": mse
+    }
 
+# ---- Print results ----
+for name, metrics in results.items():
+    print(f"{name}:")
+    for metric, value in metrics.items():
+        print(f"  {metric}: {value}")
 
+# # ---- ROC with bootstrap CI ----
+n_bootstrap = 1000
+rng = np.random.RandomState(42)
 
-# # Define models
-# models = {
-#     'Logistic Regression': LogisticRegression(),
-#     'Random Forest': RandomForestClassifier(n_estimators=100),
-#     'Gradient Boosting': GradientBoostingClassifier(n_estimators=100),
-#     'SVM': SVC(probability=True),
-#     'Neural Network': MLPClassifier(hidden_layer_sizes=(100,), max_iter=1000)
-# }
+for name, model in models.items():
+    # Get prediction probabilities
+    y_proba = model.predict_proba(X_test_scaled_enet_selected)[:, 1]
+    auc = roc_auc_score(y_test, y_proba)
 
-# # Evaluate each model using cross-validation
-# for name, model in models.items():
-#     scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='accuracy')
-#     print(f"{name} Accuracy: {np.mean(scores):.4f} ± {np.std(scores):.4f}")
+    # Compute base ROC
+    fpr, tpr, _ = roc_curve(y_test, y_proba)
 
+    # Bootstrap TPRs
+    bootstrapped_tprs = []
+    for i in range(n_bootstrap):
+        indices = rng.randint(0, len(y_proba), len(y_proba))
+        if len(np.unique(y_test[indices])) < 2:  # skip if only one class
+            continue
+        fpr_i, tpr_i, _ = roc_curve(y_test[indices], y_proba[indices])
+        bootstrapped_tprs.append(np.interp(fpr, fpr_i, tpr_i))
+
+    tprs = np.array(bootstrapped_tprs)
+    mean_tpr = tprs.mean(axis=0)
+    std_tpr = tprs.std(axis=0)
+    tpr_upper = np.minimum(mean_tpr + 1.96 * std_tpr, 1)
+    tpr_lower = np.maximum(mean_tpr - 1.96 * std_tpr, 0)
+
+    # ---- Plot for each model ----
+    plt.figure()
+    plt.plot(fpr, tpr, color="blue", lw=2, label=f"ROC curve (AUC = {auc:.2f})")
+    plt.fill_between(fpr, tpr_lower, tpr_upper, color="blue", alpha=0.2, label="95% CI")
+    plt.plot([0, 1], [0, 1], color="gray", lw=2, linestyle="--")
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title(f"ROC Curve with 95% CI - {name}")
+    plt.legend(loc="lower right")
+
+    # save each model’s ROC+CI separately
+    plt.savefig(f"roc_curve_with_CI_{name}.tif", dpi=1000, bbox_inches="tight")
+    plt.close()
 
 
 
